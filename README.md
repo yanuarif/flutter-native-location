@@ -15,9 +15,7 @@ A Flutter plugin for native GPS location tracking with configurable interval and
 
 ```yaml
 dependencies:
-  flutter_native_location:
-    git:
-      url: https://github.com/yanuarif/flutter_native_location
+  flutter_native_location: ^0.1.0
 ```
 
 ## iOS Setup
