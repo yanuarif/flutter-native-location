@@ -7,11 +7,12 @@ class LocationManager: NSObject {
     private let onError: (_ code: String, _ message: String) -> Void
 
     private let clManager = CLLocationManager()
-    private var timer: Timer?
-    private var intervalSeconds: TimeInterval = 5
     private var accuracyFilter: Double = 50
     private var latestLocation: CLLocation?
     private var previousLocation: CLLocation?
+
+    private var updateTask: Task<Void, Never>?
+    private var backgroundSession: Any?
 
     private(set) var trackingStateString: String = "idle"
     var lastLocationMap: [String: Any]? {
@@ -57,64 +58,101 @@ class LocationManager: NSObject {
 
     // MARK: - Tracking
 
-    /// Starts location updates with a timer-based emission interval, accuracy filter, and iOS accuracy level.
-    func startTracking(intervalSeconds: Int, accuracyFilter: Double, accuracyLevel: String = "high") {
+    /// Starts location updates with accuracy filter, and iOS accuracy level.
+    func startTracking(accuracyFilter: Double, accuracyLevel: String = "high") {
         let status = clManager.authorizationStatus
         guard status == .authorizedAlways || status == .authorizedWhenInUse else {
             onError("PERMISSION_DENIED", "Location permission not granted. Status: \(status.rawValue)")
             return
         }
 
-        self.intervalSeconds = TimeInterval(intervalSeconds)
         self.accuracyFilter  = accuracyFilter
 
         clManager.desiredAccuracy                 = Self.toDesiredAccuracy(accuracyLevel)
         clManager.allowsBackgroundLocationUpdates    = true
         clManager.pausesLocationUpdatesAutomatically = false
         clManager.showsBackgroundLocationIndicator   = true
-        clManager.startUpdatingLocation()
 
         trackingStateString = "tracking"
-        scheduleTimer()
+
+        if #available(iOS 18.0, *) {
+            startLiveUpdates()
+        } else {
+            clManager.startUpdatingLocation()
+        }
     }
 
-    /// Pauses timer-based emission without stopping CLLocationManager.
+    @available(iOS 18.0, *)
+    private func startLiveUpdates() {
+        backgroundSession = CLBackgroundActivitySession()
+        updateTask?.cancel()
+        updateTask = Task {
+            do {
+                let updates = CLLocationUpdate.liveUpdates()
+                for try await update in updates {
+                    guard !Task.isCancelled else { break }
+                    if let loc = update.location {
+                        self.handleNewLocation(loc)
+                    }
+                }
+            } catch {
+                self.onError("LIVE_UPDATE_FAILED", error.localizedDescription)
+            }
+        }
+    }
+
+    /// Pauses location emission without stopping CLLocationManager or Task (for smooth resume).
     func pauseTracking() {
-        timer?.invalidate()
-        timer = nil
         trackingStateString = "paused"
     }
 
-    /// Resumes timer-based emission after a pause.
+    /// Resumes location emission after a pause.
     func resumeTracking() {
         guard trackingStateString == "paused" else { return }
         trackingStateString = "tracking"
-        scheduleTimer()
     }
 
-    /// Stops location updates and releases CLLocationManager background permission.
+    /// Stops location updates and releases background permission.
     func stopTracking() {
-        timer?.invalidate()
-        timer = nil
+        trackingStateString = "idle"
+        
+        if #available(iOS 18.0, *) {
+            updateTask?.cancel()
+            updateTask = nil
+            (backgroundSession as? CLBackgroundActivitySession)?.invalidate()
+            backgroundSession = nil
+        }
+        
         clManager.stopUpdatingLocation()
         clManager.allowsBackgroundLocationUpdates = false
-        trackingStateString = "idle"
     }
 
     // MARK: - Private
 
-    private func scheduleTimer() {
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: intervalSeconds,
-                                      repeats: true) { [weak self] _ in
-            self?.emitLatestLocation()
+    private func handleNewLocation(_ loc: CLLocation) {
+        if accuracyFilter > 0 {
+            guard loc.horizontalAccuracy >= 0,
+                  loc.horizontalAccuracy <= accuracyFilter else { return }
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Only update previousLocation if it's a new point in time
+            if let latest = self.latestLocation, latest.timestamp != loc.timestamp {
+                self.previousLocation = latest
+            }
+            self.latestLocation = loc
+            
+            self.emitLatestLocation()
         }
     }
 
     private func emitLatestLocation() {
+        guard trackingStateString == "tracking" else { return }
         guard let loc = latestLocation else { return }
         let map = Self.toMap(loc, previousLoc: previousLocation)
-        DispatchQueue.main.async { self.onLocation(map) }
+        self.onLocation(map)
     }
 
     // MARK: - Helpers
@@ -211,19 +249,7 @@ extension LocationManager: CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager,
                          didUpdateLocations locations: [CLLocation]) {
         guard let loc = locations.last else { return }
-
-        if accuracyFilter > 0 {
-            guard loc.horizontalAccuracy >= 0,
-                  loc.horizontalAccuracy <= accuracyFilter else { return }
-        }
-
-        DispatchQueue.main.async {
-            // Only update previousLocation if it's a new point in time
-            if let latest = self.latestLocation, latest.timestamp != loc.timestamp {
-                self.previousLocation = latest
-            }
-            self.latestLocation = loc
-        }
+        handleNewLocation(loc)
     }
 
     /// Forwards CLLocationManager errors to Flutter via the `onError` closure.

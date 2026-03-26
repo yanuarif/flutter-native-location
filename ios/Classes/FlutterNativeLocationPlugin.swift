@@ -39,11 +39,9 @@ public class FlutterNativeLocationPlugin: NSObject, FlutterPlugin {
         case "startTracking":
             ensureManager()
             let args          = call.arguments as? [String: Any]
-            let interval      = args?["intervalSeconds"] as? Int ?? 5
             let filter        = args?["accuracyFilter"] as? Double ?? 50
             let accuracyLevel = args?["accuracyLevel"] as? String ?? "high"
-            locationManager!.startTracking(intervalSeconds: interval,
-                                           accuracyFilter: filter,
+            locationManager!.startTracking(accuracyFilter: filter,
                                            accuracyLevel: accuracyLevel)
             result(nil)
 
