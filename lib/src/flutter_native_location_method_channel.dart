@@ -119,4 +119,20 @@ class MethodChannelFlutterNativeLocation extends FlutterNativeLocationPlatform {
       );
     }
   }
+
+  /// Fetches a freshly fetched location from native and deserialises it into a [Position].
+  @override
+  Future<Position?> getCurrentLocation() async {
+    try {
+      final raw = await methodChannel.invokeMethod<Map>('getCurrentLocation');
+      if (raw == null) return null;
+      return Position.fromJson(Map<String, dynamic>.from(raw));
+    } catch (e) {
+      throw PlatformException(
+        code: 'GET_CURRENT_LOCATION_FAILED',
+        message: 'Failed to get current location',
+        details: e,
+      );
+    }
+  }
 }

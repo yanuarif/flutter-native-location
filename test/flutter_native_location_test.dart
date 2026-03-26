@@ -15,6 +15,12 @@ class MockFlutterNativeLocationPlatform
   }
 
   @override
+  Future<Position?> getCurrentLocation() {
+    // TODO: implement getCurrentLocation
+    throw UnimplementedError();
+  }
+
+  @override
   Future<TrackingState> getTrackingState() {
     // TODO: implement getTrackingState
     throw UnimplementedError();

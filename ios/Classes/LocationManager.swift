@@ -14,6 +14,8 @@ class LocationManager: NSObject {
     private var updateTask: Task<Void, Never>?
     private var backgroundSession: Any?
 
+    private var singleLocationCompletions: [([String: Any]?, String?) -> Void] = []
+
     private(set) var trackingStateString: String = "idle"
     var lastLocationMap: [String: Any]? {
         let locToUse = latestLocation ?? clManager.location
@@ -57,6 +59,23 @@ class LocationManager: NSObject {
     private var permissionCompletion: ((String) -> Void)?
 
     // MARK: - Tracking
+
+    /// Requests a single location update.
+    func getCurrentLocation(completion: @escaping ([String: Any]?, String?) -> Void) {
+        let status = clManager.authorizationStatus
+        guard status == .authorizedAlways || status == .authorizedWhenInUse else {
+            completion(nil, "Location permission not granted. Status: \(status.rawValue)")
+            return
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.singleLocationCompletions.append(completion)
+            if self.trackingStateString != "tracking" {
+                self.clManager.requestLocation()
+            }
+        }
+    }
 
     /// Starts location updates with accuracy filter, and iOS accuracy level.
     func startTracking(accuracyFilter: Double, accuracyLevel: String = "high") {
@@ -143,6 +162,16 @@ class LocationManager: NSObject {
                 self.previousLocation = latest
             }
             self.latestLocation = loc
+            
+            let map = Self.toMap(loc, previousLoc: self.previousLocation)
+            
+            if !self.singleLocationCompletions.isEmpty {
+                let completions = self.singleLocationCompletions
+                self.singleLocationCompletions.removeAll()
+                for comp in completions {
+                    comp(map, nil)
+                }
+            }
             
             self.emitLatestLocation()
         }
@@ -258,6 +287,16 @@ extension LocationManager: CLLocationManagerDelegate {
         let clError = error as? CLError
         let code    = clError.map { "CL_ERROR_\($0.code.rawValue)" } ?? "LOCATION_FAILED"
         let message = error.localizedDescription
-        DispatchQueue.main.async { self.onError(code, message) }
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if !self.singleLocationCompletions.isEmpty {
+                let completions = self.singleLocationCompletions
+                self.singleLocationCompletions.removeAll()
+                for comp in completions {
+                    comp(nil, message)
+                }
+            }
+            self.onError(code, message)
+        }
     }
 }

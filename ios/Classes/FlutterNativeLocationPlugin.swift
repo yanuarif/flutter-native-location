@@ -31,18 +31,16 @@ public class FlutterNativeLocationPlugin: NSObject, FlutterPlugin {
         switch call.method {
 
         case "requestPermission":
-            ensureManager()
-            locationManager!.requestPermission { status in
+            ensureManager().requestPermission { status in
                 result(status)
             }
 
         case "startTracking":
-            ensureManager()
             let args          = call.arguments as? [String: Any]
             let filter        = args?["accuracyFilter"] as? Double ?? 50
             let accuracyLevel = args?["accuracyLevel"] as? String ?? "high"
-            locationManager!.startTracking(accuracyFilter: filter,
-                                           accuracyLevel: accuracyLevel)
+            ensureManager().startTracking(accuracyFilter: filter,
+                                          accuracyLevel: accuracyLevel)
             result(nil)
 
         case "pauseTracking":
@@ -60,9 +58,17 @@ public class FlutterNativeLocationPlugin: NSObject, FlutterPlugin {
         case "getTrackingState":
             result(locationManager?.trackingStateString ?? "idle")
 
+        case "getCurrentLocation":
+            ensureManager().getCurrentLocation { map, errorMessage in
+                if let err = errorMessage {
+                    result(FlutterError(code: "LOCATION_ERROR", message: err, details: nil))
+                } else {
+                    result(map)
+                }
+            }
+
         case "getLastLocation":
-            ensureManager()
-            result(locationManager?.lastLocationMap)
+            result(ensureManager().lastLocationMap)
 
         default:
             result(FlutterMethodNotImplemented)
@@ -72,9 +78,10 @@ public class FlutterNativeLocationPlugin: NSObject, FlutterPlugin {
     // MARK: - Helpers
 
     /// Lazily creates the `LocationManager`, wiring location and error events to the stream handler.
-    private func ensureManager() {
-        guard locationManager == nil else { return }
-        locationManager = LocationManager(
+    @discardableResult
+    private func ensureManager() -> LocationManager {
+        if let manager = locationManager { return manager }
+        let manager = LocationManager(
             onLocation: { [weak self] locationMap in
                 self?.streamHandler.eventSink?(locationMap)
             },
@@ -83,6 +90,8 @@ public class FlutterNativeLocationPlugin: NSObject, FlutterPlugin {
                 self?.streamHandler.eventSink?(flutterError)
             }
         )
+        locationManager = manager
+        return manager
     }
 }
 

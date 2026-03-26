@@ -43,4 +43,9 @@ abstract class FlutterNativeLocationPlatform extends PlatformInterface {
 
   /// Returns the last known [Position], or null if unavailable.
   Future<Position?> getLastLocation();
+
+  /// Returns a freshly fetched [Position], or null if unavailable.
+  Future<Position?> getCurrentLocation() {
+    throw UnimplementedError('getCurrentLocation() has not been implemented.');
+  }
 }

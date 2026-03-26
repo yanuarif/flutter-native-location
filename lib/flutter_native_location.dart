@@ -103,6 +103,11 @@ class FlutterNativeLocation {
     return await FlutterNativeLocationPlatform.instance.getLastLocation();
   }
 
+  /// Returns a freshly fetched [Position], or null if unavailable.
+  Future<Position?> getCurrentLocation() async {
+    return await FlutterNativeLocationPlatform.instance.getCurrentLocation();
+  }
+
   /// Replaces the current config. If [restartTracking] is true and tracking is active, restarts automatically.
   Future<void> reconfigure(
     LocationConfig newConfig, {
