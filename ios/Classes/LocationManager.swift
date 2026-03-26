@@ -14,7 +14,10 @@ class LocationManager: NSObject {
     private var previousLocation: CLLocation?
 
     private(set) var trackingStateString: String = "idle"
-    var lastLocationMap: [String: Any]? { latestLocation.map { Self.toMap($0, previousLoc: previousLocation) } }
+    var lastLocationMap: [String: Any]? {
+        let locToUse = latestLocation ?? clManager.location
+        return locToUse.map { Self.toMap($0, previousLoc: previousLocation) }
+    }
 
     // MARK: - Init
 

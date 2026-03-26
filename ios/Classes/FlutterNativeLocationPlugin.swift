@@ -63,6 +63,7 @@ public class FlutterNativeLocationPlugin: NSObject, FlutterPlugin {
             result(locationManager?.trackingStateString ?? "idle")
 
         case "getLastLocation":
+            ensureManager()
             result(locationManager?.lastLocationMap)
 
         default:

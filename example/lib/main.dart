@@ -108,6 +108,36 @@ class _TrackerPageState extends State<TrackerPage> {
     setState(() => _state = TrackingState.idle);
   }
 
+  Future<void> _getLastLocation() async {
+    try {
+      final loc = await _plugin.getLastLocation();
+      if (loc != null) {
+        setState(() {
+          _latest = loc;
+          _history.insert(0, loc);
+          _errorMessage = null;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Got last known location')),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Last known location is null')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   // ── UI ─────────────────────────────────────────────────────────────────────
 
   @override
@@ -135,6 +165,7 @@ class _TrackerPageState extends State<TrackerPage> {
               onPause: _pause,
               onResume: _resume,
               onStop: _stop,
+              onGetLastLocation: _getLastLocation,
             ),
             _HistoryTab(history: _history),
           ],
@@ -151,7 +182,7 @@ class _LiveTab extends StatelessWidget {
   final Position? latest;
   final LocationConfig config;
   final String? errorMessage;
-  final VoidCallback onStart, onPause, onResume, onStop;
+  final VoidCallback onStart, onPause, onResume, onStop, onGetLastLocation;
 
   const _LiveTab({
     required this.state,
@@ -162,6 +193,7 @@ class _LiveTab extends StatelessWidget {
     required this.onPause,
     required this.onResume,
     required this.onStop,
+    required this.onGetLastLocation,
   });
 
   @override
@@ -204,6 +236,12 @@ class _LiveTab extends StatelessWidget {
             onPause: onPause,
             onResume: onResume,
             onStop: onStop,
+          ),
+          const SizedBox(height: 16),
+          TextButton.icon(
+            onPressed: onGetLastLocation,
+            icon: const Icon(Icons.history),
+            label: const Text('Get Last Known Location'),
           ),
         ],
       ),
