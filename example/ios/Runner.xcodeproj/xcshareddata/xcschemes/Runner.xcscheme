@@ -74,8 +74,8 @@
          </BuildableReference>
       </BuildableProductRunnable>
       <LocationScenarioReference
-         identifier = "Tokyo, Japan"
-         referenceType = "1">
+         identifier = "../../../../../Downloads/20260325184949-08003-data-3.gpx"
+         referenceType = "0">
       </LocationScenarioReference>
    </LaunchAction>
    <ProfileAction

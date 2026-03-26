@@ -11,9 +11,10 @@ class LocationManager: NSObject {
     private var intervalSeconds: TimeInterval = 5
     private var accuracyFilter: Double = 50
     private var latestLocation: CLLocation?
+    private var previousLocation: CLLocation?
 
     private(set) var trackingStateString: String = "idle"
-    var lastLocationMap: [String: Any]? { latestLocation.map(Self.toMap) }
+    var lastLocationMap: [String: Any]? { latestLocation.map { Self.toMap($0, previousLoc: previousLocation) } }
 
     // MARK: - Init
 
@@ -109,7 +110,7 @@ class LocationManager: NSObject {
 
     private func emitLatestLocation() {
         guard let loc = latestLocation else { return }
-        let map = Self.toMap(loc)
+        let map = Self.toMap(loc, previousLoc: previousLocation)
         DispatchQueue.main.async { self.onLocation(map) }
     }
 
@@ -128,7 +129,29 @@ class LocationManager: NSObject {
     }
 
     /// Serialises a `CLLocation` into a map compatible with the Flutter platform channel codec.
-    static func toMap(_ loc: CLLocation) -> [String: Any] {
+    static func toMap(_ loc: CLLocation, previousLoc: CLLocation? = nil) -> [String: Any] {
+        var finalSpeed = loc.speed
+        var finalHeading = loc.course
+        
+        if let prev = previousLoc {
+            let distance = loc.distance(from: prev)
+            let timeDelta = loc.timestamp.timeIntervalSince(prev.timestamp)
+            
+            // If native speed is invalid (< 0) or unrealistically high (e.g., > 150 m/s (~540 km/h) which indicates GPS noise)
+            if timeDelta > 0 && distance >= 0 {
+                let calculatedSpeed = distance / timeDelta
+                
+                if finalSpeed < 0 || finalSpeed > 150 {
+                    finalSpeed = calculatedSpeed
+                }
+                
+                // Fallback for invalid heading (< 0) using bearing calculation
+                if finalHeading < 0 {
+                    finalHeading = calculateBearing(from: prev.coordinate, to: loc.coordinate)
+                }
+            }
+        }
+        
         return [
             "longitude":        loc.coordinate.longitude,
             "latitude":         loc.coordinate.latitude,
@@ -136,12 +159,31 @@ class LocationManager: NSObject {
             "accuracy":         loc.horizontalAccuracy,
             "altitude":         loc.altitude,
             "altitudeAccuracy": loc.verticalAccuracy,
-            "heading":          loc.course,
+            "heading":          finalHeading,
             "headingAccuracy":  loc.courseAccuracy,
-            "speed":            loc.speed,
+            "speed":            finalSpeed,
             "speedAccuracy":    loc.speedAccuracy,
-            "speedKmh":         loc.speed >= 0 ? loc.speed * 3.6 : -1.0,
+            "speedKmh":         finalSpeed >= 0 ? finalSpeed * 3.6 : -1.0,
         ]
+    }
+
+    /// Calculates bearing (in degrees, true North) from one coordinate to another
+    static func calculateBearing(from: CLLocationCoordinate2D, to: CLLocationCoordinate2D) -> Double {
+        let lat1 = from.latitude * .pi / 180
+        let lon1 = from.longitude * .pi / 180
+        let lat2 = to.latitude * .pi / 180
+        let lon2 = to.longitude * .pi / 180
+        
+        let dLon = lon2 - lon1
+        let y = sin(dLon) * cos(lat2)
+        let x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon)
+        let radiansBearing = atan2(y, x)
+        
+        var degrees = radiansBearing * 180 / .pi
+        if degrees < 0 {
+            degrees += 360
+        }
+        return degrees
     }
 }
 
@@ -173,6 +215,10 @@ extension LocationManager: CLLocationManagerDelegate {
         }
 
         DispatchQueue.main.async {
+            // Only update previousLocation if it's a new point in time
+            if let latest = self.latestLocation, latest.timestamp != loc.timestamp {
+                self.previousLocation = latest
+            }
             self.latestLocation = loc
         }
     }
