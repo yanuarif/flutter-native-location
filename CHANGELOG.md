@@ -1,5 +1,8 @@
+## 0.1.3 - 2026-03-27
+* Fix iOS location updates to respect the `intervalSeconds` frequency.
+
 ## 0.1.2 - 2026-03-26
-* Implement `getLastLocation` fallback logic for iOS to accurately fetch device location even if tracking is not actively receiving coordinates.
+* Implement `getLastLocation` fallback logic for iOS.
 
 ## 0.1.1 - 2026-03-26
 * Fix speed and heading calculation

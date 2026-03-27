@@ -7,6 +7,8 @@ class LocationManager: NSObject {
     private let onError: (_ code: String, _ message: String) -> Void
 
     private let clManager = CLLocationManager()
+    private var timer: Timer?
+    private var intervalSeconds: TimeInterval = 5
     private var accuracyFilter: Double = 50
     private var latestLocation: CLLocation?
     private var previousLocation: CLLocation?
@@ -78,13 +80,14 @@ class LocationManager: NSObject {
     }
 
     /// Starts location updates with accuracy filter, and iOS accuracy level.
-    func startTracking(accuracyFilter: Double, accuracyLevel: String = "high") {
+    func startTracking(intervalSeconds: Double, accuracyFilter: Double, accuracyLevel: String = "high") {
         let status = clManager.authorizationStatus
         guard status == .authorizedAlways || status == .authorizedWhenInUse else {
             onError("PERMISSION_DENIED", "Location permission not granted. Status: \(status.rawValue)")
             return
         }
 
+        self.intervalSeconds = intervalSeconds
         self.accuracyFilter  = accuracyFilter
 
         clManager.desiredAccuracy                 = Self.toDesiredAccuracy(accuracyLevel)
@@ -99,6 +102,8 @@ class LocationManager: NSObject {
         } else {
             clManager.startUpdatingLocation()
         }
+        
+        scheduleTimer()
     }
 
     @available(iOS 18.0, *)
@@ -122,6 +127,8 @@ class LocationManager: NSObject {
 
     /// Pauses location emission without stopping CLLocationManager or Task (for smooth resume).
     func pauseTracking() {
+        timer?.invalidate()
+        timer = nil
         trackingStateString = "paused"
     }
 
@@ -129,11 +136,15 @@ class LocationManager: NSObject {
     func resumeTracking() {
         guard trackingStateString == "paused" else { return }
         trackingStateString = "tracking"
+        scheduleTimer()
     }
 
     /// Stops location updates and releases background permission.
     func stopTracking() {
         trackingStateString = "idle"
+        
+        timer?.invalidate()
+        timer = nil
         
         if #available(iOS 18.0, *) {
             updateTask?.cancel()
@@ -147,6 +158,13 @@ class LocationManager: NSObject {
     }
 
     // MARK: - Private
+
+    private func scheduleTimer() {
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: intervalSeconds, repeats: true) { [weak self] _ in
+            self?.emitLatestLocation()
+        }
+    }
 
     private func handleNewLocation(_ loc: CLLocation) {
         if accuracyFilter > 0 {
@@ -172,8 +190,6 @@ class LocationManager: NSObject {
                     comp(map, nil)
                 }
             }
-            
-            self.emitLatestLocation()
         }
     }
 

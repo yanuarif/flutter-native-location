@@ -39,7 +39,9 @@ public class FlutterNativeLocationPlugin: NSObject, FlutterPlugin {
             let args          = call.arguments as? [String: Any]
             let filter        = args?["accuracyFilter"] as? Double ?? 50
             let accuracyLevel = args?["accuracyLevel"] as? String ?? "high"
-            ensureManager().startTracking(accuracyFilter: filter,
+            let interval      = (args?["intervalSeconds"] as? NSNumber)?.doubleValue ?? 5.0
+            ensureManager().startTracking(intervalSeconds: interval,
+                                          accuracyFilter: filter,
                                           accuracyLevel: accuracyLevel)
             result(nil)
 
