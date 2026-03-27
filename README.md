@@ -98,6 +98,9 @@ final state = await tracker.getTrackingState();
 // Get last known position
 final last = await tracker.getLastLocation();
 
+// Fetch a single, fresh location update
+final current = await tracker.getCurrentLocation();
+
 // Reconfigure on the fly (restarts tracking if active)
 await tracker.reconfigure(
   LocationConfig(intervalSeconds: 10, accuracy: LocationAccuracy.medium),
