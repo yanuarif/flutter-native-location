@@ -1,6 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_native_location/src/enums/tracking_state.dart';
 import 'package:flutter_native_location/src/models/location_config.dart';
 import 'package:flutter_native_location/src/models/position.dart';
 
@@ -15,96 +16,80 @@ class MethodChannelFlutterNativeLocation extends FlutterNativeLocationPlatform {
     'flutter_native_location/location_stream',
   );
 
-  /// Broadcast stream of [Position] received from the native event channel.
+  // ── Ref-counted singleton tracking session ────────────────────────────────
+
+  static StreamController<Position>? _sharedController;
+  static StreamSubscription<dynamic>? _nativeEventSub;
+  static int _subscriberCount = 0;
+
+  /// Returns a stream of [Position] updates.
+  ///
+  /// - First subscriber starts native tracking (config applied once).
+  /// - Subsequent subscribers share the same tracking session.
+  /// - When all subscribers cancel, native tracking stops automatically.
   @override
-  Stream<Position> get locationStream {
-    return eventChannel.receiveBroadcastStream().map(
-      (event) => Position.fromJson(Map<String, dynamic>.from(event as Map)),
+  Stream<Position> getLocationStream(LocationConfig config) {
+    late StreamController<Position> outerController;
+    StreamSubscription<Position>? innerSub;
+
+    outerController = StreamController<Position>(
+      onListen: () {
+        _subscriberCount++;
+
+        if (_subscriberCount == 1) {
+          // First subscriber: create shared broadcast controller and wire
+          // the EventChannel (which triggers native onListen → startTracking).
+          _sharedController = StreamController<Position>.broadcast();
+          _nativeEventSub = eventChannel
+              .receiveBroadcastStream({
+                'accuracyFilter': config.resolvedAccuracyFilter,
+                'accuracyLevel': config.accuracy.name,
+              })
+              .listen(
+                (event) {
+                  try {
+                    final pos = Position.fromJson(
+                      Map<String, dynamic>.from(event as Map),
+                    );
+                    _sharedController?.add(pos);
+                  } catch (e, st) {
+                    _sharedController?.addError(e, st);
+                  }
+                },
+                onError: (Object err, StackTrace st) =>
+                    _sharedController?.addError(err, st),
+              );
+        }
+
+        // Forward shared events to this individual subscriber.
+        innerSub = _sharedController!.stream.listen(
+          (pos) {
+            if (!outerController.isClosed) outerController.add(pos);
+          },
+          onError: (Object err, StackTrace st) {
+            if (!outerController.isClosed) outerController.addError(err, st);
+          },
+        );
+      },
+      onCancel: () async {
+        await innerSub?.cancel();
+        innerSub = null;
+        _subscriberCount--;
+
+        if (_subscriberCount == 0) {
+          // Last subscriber gone: cancel EventChannel (triggers native onCancel
+          // → stopTracking) and tear down the shared controller.
+          await _nativeEventSub?.cancel();
+          _nativeEventSub = null;
+          _sharedController = null;
+        }
+      },
     );
+
+    return outerController.stream;
   }
 
-  /// Invokes `requestPermission` on the native layer and returns the permission status string.
-  @override
-  Future<String> requestPermission() async {
-    final result = await methodChannel.invokeMethod<String>(
-      'requestPermission',
-    );
-    return result ?? 'notDetermined';
-  }
-
-  /// Invokes `startTracking` on the native layer with the given config parameters.
-  @override
-  Future<void> startTracking(LocationConfig config) async {
-    try {
-      await methodChannel.invokeMethod('startTracking', {
-        'intervalSeconds': config.intervalSeconds,
-        'accuracyFilter': config.resolvedAccuracyFilter,
-        'accuracyLevel': config.accuracy.name,
-      });
-    } catch (e) {
-      throw PlatformException(
-        code: 'START_TRACKING_FAILED',
-        message: 'Failed to start tracking',
-        details: e,
-      );
-    }
-  }
-
-  /// Invokes `pauseTracking` on the native layer.
-  @override
-  Future<void> pauseTracking() async {
-    try {
-      await methodChannel.invokeMethod('pauseTracking');
-    } catch (e) {
-      throw PlatformException(
-        code: 'PAUSE_TRACKING_FAILED',
-        message: 'Failed to pause tracking',
-        details: e,
-      );
-    }
-  }
-
-  /// Invokes `resumeTracking` on the native layer.
-  @override
-  Future<void> resumeTracking() async {
-    try {
-      await methodChannel.invokeMethod('resumeTracking');
-    } catch (e) {
-      throw PlatformException(
-        code: 'RESUME_TRACKING_FAILED',
-        message: 'Failed to resume tracking',
-        details: e,
-      );
-    }
-  }
-
-  /// Invokes `stopTracking` on the native layer.
-  @override
-  Future<void> stopTracking() async {
-    try {
-      await methodChannel.invokeMethod('stopTracking');
-    } catch (e) {
-      throw PlatformException(
-        code: 'STOP_TRACKING_FAILED',
-        message: 'Failed to stop tracking',
-        details: e,
-      );
-    }
-  }
-
-  /// Fetches the current tracking state string from native and maps it to [TrackingState].
-  @override
-  Future<TrackingState> getTrackingState() async {
-    final raw = await methodChannel.invokeMethod<String>('getTrackingState');
-    return switch (raw) {
-      'tracking' => TrackingState.tracking,
-      'paused' => TrackingState.paused,
-      'error' => TrackingState.error,
-      _ => TrackingState.idle,
-    };
-  }
-
-  /// Fetches the last known location from native and deserialises it into a [Position].
+  /// Fetches the last known location from native.
   @override
   Future<Position?> getLastLocation() async {
     try {
@@ -120,7 +105,7 @@ class MethodChannelFlutterNativeLocation extends FlutterNativeLocationPlatform {
     }
   }
 
-  /// Fetches a freshly fetched location from native and deserialises it into a [Position].
+  /// Fetches a fresh location from native.
   @override
   Future<Position?> getCurrentLocation() async {
     try {

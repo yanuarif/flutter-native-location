@@ -1,21 +1,11 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_native_location/flutter_native_location.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Initialise the singleton once — permission requested + autoStart begins
-  // tracking immediately.
-  await FlutterNativeLocation.init(
-    LocationConfig(
-      intervalSeconds: 5,
-      accuracy: LocationAccuracy.high, // ≤ 25 m
-      autoStart: true,
-    ),
-  );
-
   runApp(const MyApp());
 }
 
@@ -36,33 +26,30 @@ class TrackerPage extends StatefulWidget {
 }
 
 class _TrackerPageState extends State<TrackerPage> {
-  // Access the singleton — already initialised in main()
-  FlutterNativeLocation get _plugin => FlutterNativeLocation.instance;
+  static const _config = LocationConfig(
+    accuracy: LocationAccuracy.high,
+  );
 
   StreamSubscription<Position>? _sub;
-  late TrackingState _state;
+  bool _isTracking = false;
   Position? _latest;
   final List<Position> _history = [];
   String? _errorMessage;
 
-  // ── Lifecycle ──────────────────────────────────────────────────────────────
+  // ── Actions ────────────────────────────────────────────────────────────────
 
-  @override
-  void initState() {
-    super.initState();
-    // Sync local state from singleton (may already be tracking via autoStart)
-    _state = _plugin.state;
-    // Subscribe to the stream — single broadcast stream shared across the app
-    _sub = _plugin.locationStream.listen(
+  void _startTracking() {
+    if (_isTracking) return;
+    _sub = FlutterNativeLocation.getLocationStream(_config).listen(
       (point) {
         setState(() {
           _latest = point;
           _history.insert(0, point);
           _errorMessage = null;
+          _isTracking = true;
         });
       },
       onError: (Object error) {
-        // Native layer sends PlatformException on CLLocationManager errors
         final msg = error is PlatformException
             ? '[${error.code}] ${error.message}'
             : error.toString();
@@ -77,40 +64,18 @@ class _TrackerPageState extends State<TrackerPage> {
         }
       },
     );
+    setState(() => _isTracking = true);
   }
 
-  @override
-  void dispose() {
-    _sub?.cancel();
-    super.dispose();
-  }
-
-  // ── Actions ────────────────────────────────────────────────────────────────
-
-  Future<void> _start() async {
-    // Uses config from init() by default — no need to repeat intervalSeconds
-    await _plugin.startTracking();
-    setState(() => _state = TrackingState.tracking);
-  }
-
-  Future<void> _pause() async {
-    await _plugin.pauseTracking();
-    setState(() => _state = TrackingState.paused);
-  }
-
-  Future<void> _resume() async {
-    await _plugin.resumeTracking();
-    setState(() => _state = TrackingState.tracking);
-  }
-
-  Future<void> _stop() async {
-    await _plugin.stopTracking();
-    setState(() => _state = TrackingState.idle);
+  Future<void> _stopTracking() async {
+    await _sub?.cancel();
+    _sub = null;
+    setState(() => _isTracking = false);
   }
 
   Future<void> _getLastLocation() async {
     try {
-      final loc = await _plugin.getLastLocation();
+      final loc = await FlutterNativeLocation.getLastLocation();
       if (loc != null) {
         setState(() {
           _latest = loc;
@@ -138,6 +103,12 @@ class _TrackerPageState extends State<TrackerPage> {
     }
   }
 
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
   // ── UI ─────────────────────────────────────────────────────────────────────
 
   @override
@@ -157,14 +128,12 @@ class _TrackerPageState extends State<TrackerPage> {
         body: TabBarView(
           children: [
             _LiveTab(
-              state: _state,
+              isTracking: _isTracking,
+              config: _config,
               latest: _latest,
-              config: _plugin.config,
               errorMessage: _errorMessage,
-              onStart: _start,
-              onPause: _pause,
-              onResume: _resume,
-              onStop: _stop,
+              onStart: _startTracking,
+              onStop: _stopTracking,
               onGetLastLocation: _getLastLocation,
             ),
             _HistoryTab(history: _history),
@@ -178,20 +147,20 @@ class _TrackerPageState extends State<TrackerPage> {
 // ── Live Tab ──────────────────────────────────────────────────────────────────
 
 class _LiveTab extends StatelessWidget {
-  final TrackingState state;
-  final Position? latest;
+  final bool isTracking;
   final LocationConfig config;
+  final Position? latest;
   final String? errorMessage;
-  final VoidCallback onStart, onPause, onResume, onStop, onGetLastLocation;
+  final VoidCallback onStart;
+  final Future<void> Function() onStop;
+  final VoidCallback onGetLastLocation;
 
   const _LiveTab({
-    required this.state,
-    required this.latest,
+    required this.isTracking,
     required this.config,
+    required this.latest,
     required this.errorMessage,
     required this.onStart,
-    required this.onPause,
-    required this.onResume,
     required this.onStop,
     required this.onGetLastLocation,
   });
@@ -203,7 +172,7 @@ class _LiveTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _StatusBadge(state: state, config: config),
+          _StatusBadge(isTracking: isTracking, config: config),
           if (errorMessage != null) ...[
             const SizedBox(height: 8),
             Container(
@@ -230,13 +199,19 @@ class _LiveTab extends StatelessWidget {
           const SizedBox(height: 16),
           if (latest != null) _LocationCard(point: latest!),
           const SizedBox(height: 16),
-          _ControlButtons(
-            state: state,
-            onStart: onStart,
-            onPause: onPause,
-            onResume: onResume,
-            onStop: onStop,
-          ),
+          if (isTracking)
+            FilledButton.icon(
+              onPressed: onStop,
+              icon: const Icon(Icons.stop),
+              label: const Text('Stop Tracking'),
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            )
+          else
+            FilledButton.icon(
+              onPressed: onStart,
+              icon: const Icon(Icons.location_on),
+              label: const Text('Start Tracking'),
+            ),
           const SizedBox(height: 16),
           TextButton.icon(
             onPressed: onGetLastLocation,
@@ -250,35 +225,23 @@ class _LiveTab extends StatelessWidget {
 }
 
 class _StatusBadge extends StatelessWidget {
-  final TrackingState state;
+  final bool isTracking;
   final LocationConfig config;
-  const _StatusBadge({required this.state, required this.config});
-
-  Color get _color => switch (state) {
-    TrackingState.tracking => Colors.green,
-    TrackingState.paused => Colors.orange,
-    TrackingState.error => Colors.red,
-    _ => Colors.grey,
-  };
-
-  String get _label => switch (state) {
-    TrackingState.tracking => 'Tracking',
-    TrackingState.paused => 'Paused',
-    TrackingState.error => 'Error',
-    _ => 'Idle',
-  };
+  const _StatusBadge({required this.isTracking, required this.config});
 
   @override
   Widget build(BuildContext context) {
+    final color = isTracking ? Colors.green : Colors.grey;
+    final label = isTracking ? 'Tracking' : 'Idle';
     return Card(
       child: ListTile(
-        leading: Icon(Icons.circle, color: _color, size: 14),
+        leading: Icon(Icons.circle, color: color, size: 14),
         title: Text(
-          _label,
-          style: TextStyle(color: _color, fontWeight: FontWeight.bold),
+          label,
+          style: TextStyle(color: color, fontWeight: FontWeight.bold),
         ),
         trailing: Text(
-          'every ${config.intervalSeconds}s  •  ${config.accuracy.name} (≤${config.resolvedAccuracyFilter.toStringAsFixed(0)}m)',
+          '${config.accuracy.name} (≤${config.resolvedAccuracyFilter.toStringAsFixed(0)}m)',
           style: const TextStyle(color: Colors.grey, fontSize: 12),
         ),
       ),
@@ -359,69 +322,6 @@ class _Row extends StatelessWidget {
       ],
     ),
   );
-}
-
-class _ControlButtons extends StatelessWidget {
-  final TrackingState state;
-  final VoidCallback onStart, onPause, onResume, onStop;
-  const _ControlButtons({
-    required this.state,
-    required this.onStart,
-    required this.onPause,
-    required this.onResume,
-    required this.onStop,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return switch (state) {
-      TrackingState.tracking => Row(
-        children: [
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: onPause,
-              icon: const Icon(Icons.pause),
-              label: const Text('Pause'),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: FilledButton.icon(
-              onPressed: onStop,
-              icon: const Icon(Icons.stop),
-              label: const Text('Stop'),
-              style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            ),
-          ),
-        ],
-      ),
-      TrackingState.paused => Row(
-        children: [
-          Expanded(
-            child: FilledButton.icon(
-              onPressed: onResume,
-              icon: const Icon(Icons.play_arrow),
-              label: const Text('Resume'),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: FilledButton.icon(
-              onPressed: onStop,
-              icon: const Icon(Icons.stop),
-              label: const Text('Stop'),
-              style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            ),
-          ),
-        ],
-      ),
-      _ => FilledButton.icon(
-        onPressed: onStart,
-        icon: const Icon(Icons.location_on),
-        label: const Text('Start Tracking'),
-      ),
-    };
-  }
 }
 
 // ── History Tab ───────────────────────────────────────────────────────────────

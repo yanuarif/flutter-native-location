@@ -1,17 +1,15 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_native_location/src/flutter_native_location_method_channel.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  MethodChannelFlutterNativeLocation platform = MethodChannelFlutterNativeLocation();
-  const MethodChannel channel = MethodChannel('flutter_native_location');
+  const MethodChannel channel = MethodChannel('flutter_native_location/methods');
 
   setUp(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
-          return '42';
+          return null;
         });
   });
 

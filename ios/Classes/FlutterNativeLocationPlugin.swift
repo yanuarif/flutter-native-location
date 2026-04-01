@@ -3,7 +3,7 @@ import CoreLocation
 
 public class FlutterNativeLocationPlugin: NSObject, FlutterPlugin {
 
-    private var locationManager: LocationManager?
+    var locationManager: LocationManager?
     private let streamHandler = LocationStreamHandler()
 
     // MARK: - Registration
@@ -20,6 +20,7 @@ public class FlutterNativeLocationPlugin: NSObject, FlutterPlugin {
         )
 
         let instance = FlutterNativeLocationPlugin()
+        instance.streamHandler.plugin = instance
         registrar.addMethodCallDelegate(instance, channel: methodChannel)
         eventChannel.setStreamHandler(instance.streamHandler)
     }
@@ -29,36 +30,6 @@ public class FlutterNativeLocationPlugin: NSObject, FlutterPlugin {
     /// Routes incoming Flutter method calls to the native location manager.
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         switch call.method {
-
-        case "requestPermission":
-            ensureManager().requestPermission { status in
-                result(status)
-            }
-
-        case "startTracking":
-            let args          = call.arguments as? [String: Any]
-            let filter        = args?["accuracyFilter"] as? Double ?? 50
-            let accuracyLevel = args?["accuracyLevel"] as? String ?? "high"
-            let interval      = (args?["intervalSeconds"] as? NSNumber)?.doubleValue ?? 5.0
-            ensureManager().startTracking(intervalSeconds: interval,
-                                          accuracyFilter: filter,
-                                          accuracyLevel: accuracyLevel)
-            result(nil)
-
-        case "pauseTracking":
-            locationManager?.pauseTracking()
-            result(nil)
-
-        case "resumeTracking":
-            locationManager?.resumeTracking()
-            result(nil)
-
-        case "stopTracking":
-            locationManager?.stopTracking()
-            result(nil)
-
-        case "getTrackingState":
-            result(locationManager?.trackingStateString ?? "idle")
 
         case "getCurrentLocation":
             ensureManager().getCurrentLocation { map, errorMessage in
@@ -70,7 +41,7 @@ public class FlutterNativeLocationPlugin: NSObject, FlutterPlugin {
             }
 
         case "getLastLocation":
-            result(ensureManager().lastLocationMap)
+            result(locationManager?.lastLocationMap)
 
         default:
             result(FlutterMethodNotImplemented)
@@ -81,7 +52,7 @@ public class FlutterNativeLocationPlugin: NSObject, FlutterPlugin {
 
     /// Lazily creates the `LocationManager`, wiring location and error events to the stream handler.
     @discardableResult
-    private func ensureManager() -> LocationManager {
+    func ensureManager() -> LocationManager {
         if let manager = locationManager { return manager }
         let manager = LocationManager(
             onLocation: { [weak self] locationMap in
@@ -101,19 +72,40 @@ public class FlutterNativeLocationPlugin: NSObject, FlutterPlugin {
 
 @objc final class LocationStreamHandler: NSObject, FlutterStreamHandler {
 
+    weak var plugin: FlutterNativeLocationPlugin?
     private(set) var eventSink: FlutterEventSink?
 
     /// Called when Flutter subscribes to the event channel.
+    /// Arguments contain tracking config: `accuracyFilter` (Double) and `accuracyLevel` (String).
     @objc public func onListen(
         withArguments arguments: Any?,
         eventSink events: @escaping FlutterEventSink
     ) -> FlutterError? {
         eventSink = events
+
+        let args = arguments as? [String: Any]
+        let filter = args?["accuracyFilter"] as? Double ?? 50
+        let accuracyLevel = args?["accuracyLevel"] as? String ?? "high"
+
+        let manager = plugin?.ensureManager()
+        manager?.requestPermission { [weak self] status in
+            guard status == "authorizedAlways" || status == "authorizedWhenInUse" else {
+                self?.eventSink?(FlutterError(
+                    code: "PERMISSION_DENIED",
+                    message: "Location permission: \(status)",
+                    details: nil
+                ))
+                return
+            }
+            manager?.startTracking(accuracyFilter: filter, accuracyLevel: accuracyLevel)
+        }
+
         return nil
     }
 
     /// Called when Flutter cancels its event channel subscription.
     @objc public func onCancel(withArguments arguments: Any?) -> FlutterError? {
+        plugin?.locationManager?.stopTracking()
         eventSink = nil
         return nil
     }

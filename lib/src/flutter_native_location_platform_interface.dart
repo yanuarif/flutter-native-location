@@ -1,4 +1,5 @@
-import 'package:flutter_native_location/flutter_native_location.dart';
+import 'package:flutter_native_location/src/models/location_config.dart';
+import 'package:flutter_native_location/src/models/position.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'flutter_native_location_method_channel.dart';
@@ -20,26 +21,9 @@ abstract class FlutterNativeLocationPlatform extends PlatformInterface {
     _instance = instance;
   }
 
-  /// Broadcast stream of [Position] emitted at each tracking interval.
-  Stream<Position> get locationStream;
-
-  /// Requests location permission and returns the status string.
-  Future<String> requestPermission();
-
-  /// Starts location tracking with the given [config].
-  Future<void> startTracking(LocationConfig config);
-
-  /// Pauses timer-based emission without stopping the underlying location manager.
-  Future<void> pauseTracking();
-
-  /// Resumes tracking after a pause.
-  Future<void> resumeTracking();
-
-  /// Stops tracking and releases native location resources.
-  Future<void> stopTracking();
-
-  /// Returns the current [TrackingState] from the native layer.
-  Future<TrackingState> getTrackingState();
+  /// Returns a broadcast [Stream<Position>]. Tracking starts on first subscribe
+  /// and stops automatically when all subscriptions are cancelled.
+  Stream<Position> getLocationStream(LocationConfig config);
 
   /// Returns the last known [Position], or null if unavailable.
   Future<Position?> getLastLocation();
