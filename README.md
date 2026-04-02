@@ -5,7 +5,7 @@ A Flutter plugin for native GPS location tracking with configurable accuracy. Cu
 ## Features
 
 - 📍 Continuous location tracking via `CLLocationManager`
-- 🎯 Accuracy filter — discard low-quality GPS fixes
+- 🎯 Native precision — forwards all qualitative GPS fixes using Apple's hardware engine
 - 🔋 Background location updates (screen-off tracking)
 - 📡 Stream-based API — tracking starts on subscribe, stops on cancel
 - 🛑 Native errors forwarded to Flutter as `PlatformException`
@@ -43,7 +43,8 @@ Add the following keys to `ios/Runner/Info.plist`:
 ```dart
 final sub = FlutterNativeLocation.getLocationStream(
   LocationConfig(
-    accuracy: LocationAccuracy.high, // filter fixes worse than ~25 m
+    accuracy: LocationAccuracy.high, // Set desired accuracy
+    timeLimit: const Duration(seconds: 15), // Optional timeout
   ),
 ).listen(
   (Position pos) {
@@ -97,18 +98,17 @@ await subB.cancel(); // tracking stops
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `accuracy` | `LocationAccuracy` | `high` | GPS precision level and accuracy filter |
-| `accuracyFilter` | `double?` | `null` | Custom max horizontal accuracy in metres (overrides `accuracy.thresholdMeters`) |
-| `intervalSeconds` | `int` | `5` | Minimum seconds between emitted updates |
+| `accuracy` | `LocationAccuracy` | `high` | Native iOS `desiredAccuracy` precision level |
+| `timeLimit` | `Duration?` | `null` | Maximum time to wait between consecutive location updates before throwing a `TimeoutException`. |
 
 ### `LocationAccuracy` values
 
-| Value | Max horizontal accuracy | iOS `desiredAccuracy` |
-|---|---|---|
-| `best` | ~5 m | `kCLLocationAccuracyBest` |
-| `high` | ~25 m | `kCLLocationAccuracyNearestTenMeters` |
-| `medium` | ~100 m | `kCLLocationAccuracyHundredMeters` |
-| `low` | ~1000 m | `kCLLocationAccuracyKilometer` |
+| Value | iOS `desiredAccuracy` |
+|---|---|
+| `best` | `kCLLocationAccuracyBest` |
+| `high` | `kCLLocationAccuracyNearestTenMeters` |
+| `medium` | `kCLLocationAccuracyHundredMeters` |
+| `low` | `kCLLocationAccuracyKilometer` |
 | `lowest` | ~3000 m | `kCLLocationAccuracyThreeKilometers` |
 
 ## `Position` fields

@@ -26,9 +26,7 @@ class TrackerPage extends StatefulWidget {
 }
 
 class _TrackerPageState extends State<TrackerPage> {
-  static const _config = LocationConfig(
-    accuracy: LocationAccuracy.high, // filter fixes worse than ~25 m
-  );
+  static const _config = LocationConfig(accuracy: LocationAccuracy.high);
 
   StreamSubscription<Position>? _sub;
   bool _isTracking = false;
@@ -112,9 +110,9 @@ class _TrackerPageState extends State<TrackerPage> {
           _errorMessage = null;
         });
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Got current location')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Got current location')));
         }
       }
     } catch (e) {
@@ -206,7 +204,11 @@ class _LiveTab extends StatelessWidget {
           const SizedBox(height: 12),
           if (latest != null) _LocationCard(point: latest!),
           const SizedBox(height: 12),
-          _TrackingButton(isTracking: isTracking, onStart: onStart, onStop: onStop),
+          _TrackingButton(
+            isTracking: isTracking,
+            onStart: onStart,
+            onStop: onStop,
+          ),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -251,7 +253,13 @@ class _StatusCard extends StatelessWidget {
             color: color,
             shape: BoxShape.circle,
             boxShadow: isTracking
-                ? [BoxShadow(color: Colors.green.withAlpha(120), blurRadius: 8, spreadRadius: 2)]
+                ? [
+                    BoxShadow(
+                      color: Colors.green.withAlpha(120),
+                      blurRadius: 8,
+                      spreadRadius: 2,
+                    ),
+                  ]
                 : null,
           ),
         ),
@@ -260,7 +268,7 @@ class _StatusCard extends StatelessWidget {
           style: TextStyle(color: color, fontWeight: FontWeight.bold),
         ),
         subtitle: Text(
-          '${config.accuracy.name} accuracy  •  ≤${config.resolvedAccuracyFilter.toStringAsFixed(0)} m filter',
+          '${config.accuracy.name} accuracy${config.timeLimit != null ? '  •  timeout ${config.timeLimit!.inSeconds}s' : ''}',
           style: const TextStyle(fontSize: 12),
         ),
       ),
@@ -415,7 +423,10 @@ class _HistoryTab extends StatelessWidget {
           children: [
             Icon(Icons.map_outlined, size: 64, color: Colors.grey),
             SizedBox(height: 12),
-            Text('No location history yet', style: TextStyle(color: Colors.grey)),
+            Text(
+              'No location history yet',
+              style: TextStyle(color: Colors.grey),
+            ),
             SizedBox(height: 4),
             Text(
               'Start tracking to collect points',

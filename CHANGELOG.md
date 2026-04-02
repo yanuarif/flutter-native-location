@@ -1,3 +1,6 @@
+## 0.2.1 - 2026-04-03
+* Add `timeLimit` to `LocationConfig` to allow setting a timeout for location updates.
+
 ## 0.2.0 - 2026-04-01
 * Refactor: migrate to stream-based location tracking and remove singleton dependency.
 

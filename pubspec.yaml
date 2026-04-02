@@ -1,6 +1,6 @@
 name: flutter_native_location
 description: "Native location tracking for Flutter with configurable interval and accuracy filter."
-version: 0.2.0
+version: 0.2.1
 homepage: https://github.com/yanuarif/flutter_native_location
 repository: https://github.com/yanuarif/flutter_native_location
 issue_tracker: https://github.com/yanuarif/flutter_native_location/issues

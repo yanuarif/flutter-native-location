@@ -16,11 +16,7 @@ class MethodChannelFlutterNativeLocation extends FlutterNativeLocationPlatform {
     'flutter_native_location/location_stream',
   );
 
-  // ── Ref-counted singleton tracking session ────────────────────────────────
-
-  static StreamController<Position>? _sharedController;
-  static StreamSubscription<dynamic>? _nativeEventSub;
-  static int _subscriberCount = 0;
+  Stream<Position>? _positionStream;
 
   /// Returns a stream of [Position] updates.
   ///
@@ -29,61 +25,42 @@ class MethodChannelFlutterNativeLocation extends FlutterNativeLocationPlatform {
   /// - When all subscribers cancel, native tracking stops automatically.
   @override
   Stream<Position> getLocationStream(LocationConfig config) {
-    late StreamController<Position> outerController;
-    StreamSubscription<Position>? innerSub;
+    if (_positionStream != null) {
+      return _positionStream!;
+    }
 
-    outerController = StreamController<Position>(
-      onListen: () {
-        _subscriberCount++;
+    final originalStream = eventChannel.receiveBroadcastStream({
+      'accuracyLevel': config.accuracy.name,
+    });
 
-        if (_subscriberCount == 1) {
-          // First subscriber: create shared broadcast controller and wire
-          // the EventChannel (which triggers native onListen → startTracking).
-          _sharedController = StreamController<Position>.broadcast();
-          _nativeEventSub = eventChannel
-              .receiveBroadcastStream({'accuracyLevel': config.accuracy.name})
-              .listen(
-                (event) {
-                  try {
-                    final pos = Position.fromJson(
-                      Map<String, dynamic>.from(event as Map),
-                    );
-                    _sharedController?.add(pos);
-                  } catch (e, st) {
-                    _sharedController?.addError(e, st);
-                  }
-                },
-                onError: (Object err, StackTrace st) =>
-                    _sharedController?.addError(err, st),
-              );
-        }
-
-        // Forward shared events to this individual subscriber.
-        innerSub = _sharedController!.stream.listen(
-          (pos) {
-            if (!outerController.isClosed) outerController.add(pos);
-          },
-          onError: (Object err, StackTrace st) {
-            if (!outerController.isClosed) outerController.addError(err, st);
-          },
-        );
-      },
-      onCancel: () async {
-        await innerSub?.cancel();
-        innerSub = null;
-        _subscriberCount--;
-
-        if (_subscriberCount == 0) {
-          // Last subscriber gone: cancel EventChannel (triggers native onCancel
-          // → stopTracking) and tear down the shared controller.
-          await _nativeEventSub?.cancel();
-          _nativeEventSub = null;
-          _sharedController = null;
-        }
+    var positionStream = originalStream.asBroadcastStream(
+      onCancel: (subscription) {
+        subscription.cancel();
+        _positionStream = null;
       },
     );
 
-    return outerController.stream;
+    if (config.timeLimit != null) {
+      positionStream = positionStream.timeout(
+        config.timeLimit!,
+        onTimeout: (sink) {
+          _positionStream = null;
+          sink.addError(
+            TimeoutException(
+              'Time limit reached while waiting for position update.',
+              config.timeLimit,
+            ),
+          );
+          sink.close();
+        },
+      );
+    }
+
+    _positionStream = positionStream.map<Position>((dynamic event) {
+      return Position.fromJson(Map<String, dynamic>.from(event as Map));
+    });
+
+    return _positionStream!;
   }
 
   /// Fetches the last known location from native.
