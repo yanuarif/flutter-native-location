@@ -41,10 +41,7 @@ class MethodChannelFlutterNativeLocation extends FlutterNativeLocationPlatform {
           // the EventChannel (which triggers native onListen → startTracking).
           _sharedController = StreamController<Position>.broadcast();
           _nativeEventSub = eventChannel
-              .receiveBroadcastStream({
-                'accuracyFilter': config.resolvedAccuracyFilter,
-                'accuracyLevel': config.accuracy.name,
-              })
+              .receiveBroadcastStream({'accuracyLevel': config.accuracy.name})
               .listen(
                 (event) {
                   try {

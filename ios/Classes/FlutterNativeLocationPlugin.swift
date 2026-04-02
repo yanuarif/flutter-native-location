@@ -76,7 +76,7 @@ public class FlutterNativeLocationPlugin: NSObject, FlutterPlugin {
     private(set) var eventSink: FlutterEventSink?
 
     /// Called when Flutter subscribes to the event channel.
-    /// Arguments contain tracking config: `accuracyFilter` (Double) and `accuracyLevel` (String).
+    /// Arguments contain tracking config: `accuracyLevel` (String).
     @objc public func onListen(
         withArguments arguments: Any?,
         eventSink events: @escaping FlutterEventSink
@@ -84,7 +84,6 @@ public class FlutterNativeLocationPlugin: NSObject, FlutterPlugin {
         eventSink = events
 
         let args = arguments as? [String: Any]
-        let filter = args?["accuracyFilter"] as? Double ?? 50
         let accuracyLevel = args?["accuracyLevel"] as? String ?? "high"
 
         let manager = plugin?.ensureManager()
@@ -97,7 +96,7 @@ public class FlutterNativeLocationPlugin: NSObject, FlutterPlugin {
                 ))
                 return
             }
-            manager?.startTracking(accuracyFilter: filter, accuracyLevel: accuracyLevel)
+            manager?.startTracking(accuracyLevel: accuracyLevel)
         }
 
         return nil

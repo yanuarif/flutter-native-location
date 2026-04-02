@@ -8,7 +8,6 @@ class LocationManager: NSObject {
 
     private let clManager = CLLocationManager()
 
-    private var accuracyFilter: Double = 50
     private var latestLocation: CLLocation?
     private var previousLocation: CLLocation?
 
@@ -75,15 +74,13 @@ class LocationManager: NSObject {
         }
     }
 
-    /// Starts location updates with accuracy filter and iOS accuracy level.
-    func startTracking(accuracyFilter: Double, accuracyLevel: String = "high") {
+    /// Starts location updates with iOS accuracy level.
+    func startTracking(accuracyLevel: String = "high") {
         let status = clManager.authorizationStatus
         guard status == .authorizedAlways || status == .authorizedWhenInUse else {
             onError("PERMISSION_DENIED", "Location permission not granted. Status: \(status.rawValue)")
             return
         }
-
-        self.accuracyFilter = accuracyFilter
 
         clManager.desiredAccuracy                    = Self.toDesiredAccuracy(accuracyLevel)
         clManager.allowsBackgroundLocationUpdates    = true
@@ -105,11 +102,6 @@ class LocationManager: NSObject {
     // MARK: - Private
 
     private func handleNewLocation(_ loc: CLLocation) {
-        if accuracyFilter > 0 {
-            guard loc.horizontalAccuracy >= 0,
-                  loc.horizontalAccuracy <= accuracyFilter else { return }
-        }
-
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
 
@@ -227,7 +219,7 @@ extension LocationManager: CLLocationManagerDelegate {
         permissionCompletion = nil
     }
 
-    /// Stores the latest qualifying location; filtered by `accuracyFilter`. Updated on the main thread.
+    /// Stores the latest qualifying location. Updated on the main thread.
     func locationManager(_ manager: CLLocationManager,
                          didUpdateLocations locations: [CLLocation]) {
         guard let loc = locations.last else { return }
