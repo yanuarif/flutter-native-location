@@ -1,3 +1,6 @@
+## 0.2.2 - 2026-04-03
+* Fix iOS location updates to respect the `timeLimit` interval.
+
 ## 0.2.1 - 2026-04-03
 * Add `timeLimit` to `LocationConfig` to allow setting a timeout for location updates.
 

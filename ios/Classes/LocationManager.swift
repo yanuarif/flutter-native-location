@@ -11,6 +11,11 @@ class LocationManager: NSObject {
     private var latestLocation: CLLocation?
     private var previousLocation: CLLocation?
 
+    /// Holds a `CLBackgroundActivitySession` on iOS 17+ to keep location
+    /// tracking alive when the screen is off. Stored as `AnyObject?` to avoid
+    /// `@available` annotations on the stored-property declaration.
+    private var backgroundSession: AnyObject?
+
     private var singleLocationCompletions: [([String: Any]?, String?) -> Void] = []
 
     private(set) var isTracking: Bool = false
@@ -65,12 +70,12 @@ class LocationManager: NSObject {
             return
         }
 
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.singleLocationCompletions.append(completion)
-            if !self.isTracking {
-                self.clManager.requestLocation()
-            }
+        // CLLocationManager methods must be called on the main thread.
+        // This method is already expected to be called from the main thread
+        // (invoked via Flutter method channel which dispatches on main).
+        singleLocationCompletions.append(completion)
+        if !isTracking {
+            clManager.requestLocation()
         }
     }
 
@@ -89,43 +94,57 @@ class LocationManager: NSObject {
 
         isTracking = true
 
+        // iOS 17+ requires a CLBackgroundActivitySession alongside
+        // startUpdatingLocation() to keep location delivery alive when the
+        // screen is off — even with "Always" permission and UIBackgroundModes.
+        // Without it the system silently stops updates at screen-off.
+        // Reference: developer.apple.com/documentation/corelocation/clbackgroundactivitysession
+        if #available(iOS 17.0, *) {
+            backgroundSession = CLBackgroundActivitySession()
+        }
+
         clManager.startUpdatingLocation()
     }
 
     /// Stops location updates and releases background permission.
     func stopTracking() {
         isTracking = false
+
+        if #available(iOS 17.0, *) {
+            (backgroundSession as? CLBackgroundActivitySession)?.invalidate()
+            backgroundSession = nil
+        }
+
         clManager.stopUpdatingLocation()
         clManager.allowsBackgroundLocationUpdates = false
     }
 
     // MARK: - Private
 
+    /// Handles a new location fix. Called on the main thread by CLLocationManager
+    /// delegate — do NOT re-dispatch to main; doing so queues a block that the
+    /// Flutter engine may not drain while the screen is off, causing update drops.
     private func handleNewLocation(_ loc: CLLocation) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
+        // Only update previousLocation if it's a new point in time
+        if let latest = latestLocation, latest.timestamp != loc.timestamp {
+            previousLocation = latest
+        }
+        latestLocation = loc
 
-            // Only update previousLocation if it's a new point in time
-            if let latest = self.latestLocation, latest.timestamp != loc.timestamp {
-                self.previousLocation = latest
+        let map = Self.toMap(loc, previousLoc: previousLocation)
+
+        // Deliver to single-shot completions (getCurrentLocation)
+        if !singleLocationCompletions.isEmpty {
+            let completions = singleLocationCompletions
+            singleLocationCompletions.removeAll()
+            for comp in completions {
+                comp(map, nil)
             }
-            self.latestLocation = loc
+        }
 
-            let map = Self.toMap(loc, previousLoc: self.previousLocation)
-
-            // Deliver to single-shot completions (getCurrentLocation)
-            if !self.singleLocationCompletions.isEmpty {
-                let completions = self.singleLocationCompletions
-                self.singleLocationCompletions.removeAll()
-                for comp in completions {
-                    comp(map, nil)
-                }
-            }
-
-            // Emit every qualifying update to the stream
-            if self.isTracking {
-                self.onLocation(map)
-            }
+        // Emit every qualifying update to the stream
+        if isTracking {
+            onLocation(map)
         }
     }
 
@@ -227,21 +246,19 @@ extension LocationManager: CLLocationManagerDelegate {
     }
 
     /// Forwards CLLocationManager errors to Flutter via the `onError` closure.
+    /// Called on the main thread by CLLocationManager — no re-dispatch needed.
     func locationManager(_ manager: CLLocationManager,
                          didFailWithError error: Error) {
         let clError = error as? CLError
         let code    = clError.map { "CL_ERROR_\($0.code.rawValue)" } ?? "LOCATION_FAILED"
         let message = error.localizedDescription
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            if !self.singleLocationCompletions.isEmpty {
-                let completions = self.singleLocationCompletions
-                self.singleLocationCompletions.removeAll()
-                for comp in completions {
-                    comp(nil, message)
-                }
+        if !singleLocationCompletions.isEmpty {
+            let completions = singleLocationCompletions
+            singleLocationCompletions.removeAll()
+            for comp in completions {
+                comp(nil, message)
             }
-            self.onError(code, message)
         }
+        onError(code, message)
     }
 }

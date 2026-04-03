@@ -4,11 +4,13 @@ class LocationConfig {
   /// The desired accuracy level for location updates.
   final LocationAccuracy accuracy;
 
-  /// Maximum time to wait between consecutive location updates.
+  /// Emission interval for location updates.
   ///
-  /// If no update is received within this duration, the stream emits a
-  /// [TimeoutException] and closes. The timer resets on every received update.
-  /// Set to `null` to disable the timeout (default).
+  /// When set, the native GPS runs freely and the Dart layer samples the
+  /// latest fix on a fixed clock tick — so you receive exactly one update
+  /// per [timeLimit] duration regardless of how often the hardware fires.
+  ///
+  /// Set to `null` to forward every native event directly (default).
   final Duration? timeLimit;
 
   const LocationConfig({
